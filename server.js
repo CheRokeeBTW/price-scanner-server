@@ -52,45 +52,50 @@ async function extractTextFromReceipt(imageBase64) {
 
 function normalizeText(text) {
   return text
-    .replace(/[^\S\r\n]+/g, ' ')   // remove extra spaces
-    .replace(/[,]/g, '.')          // unify decimals
-    .replace(/O/g, '0')            // OCR mistakes
-    .replace(/СИРНИИ/gi, 'СЫРНЫЙ') // optional fix examples
+    .replace(/[€]/g, 'е')
+    .replace(/,/g, '.')
+    .replace(/нагг€тсы/gi, 'наггетсы')
+    .replace(/ГНРННи/gi, 'СЫРНЫЙ')
+    .replace(/[^\S\r\n]+/g, ' ');
 }
 
 // ================== SIMPLE RECEIPT PARSER ==================
 function parseReceiptText(text) {
-  const lines = text
-    .split("\n")
-    .map(l => l.trim())
-    .filter(l => l.length > 3);
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
-  const items = [];
+  const names = [];
+  const prices = [];
 
   for (const line of lines) {
-    // must contain letters AND numbers
-    if (!/[a-zA-Zа-яА-Я]/.test(line)) continue;
-    if (!/\d/.test(line)) continue;
+    // 🔹 detect price (handles "2 96,00" etc)
+    const priceMatch = line.replace(/\s/g, '').match(/\d+[.,]\d{2}/);
 
-    // find ALL numbers in line
-    const numbers = line.match(/\d+[.,]?\d*/g);
-    if (!numbers) continue;
+    if (priceMatch) {
+      prices.push(priceMatch[0]);
+      continue; // IMPORTANT: don't treat same line as name
+    }
 
-    // take LAST number as price (important!)
-    const priceRaw = numbers[numbers.length - 1];
-    const price = parseFloat(priceRaw.replace(",", "."));
+    // 🔹 detect product name (filter garbage)
+    if (
+      /[а-яА-Я]/.test(line) &&
+      line.length > 4 &&
+      !/инн|дата|заказ|сайт|контакт|чек|касс/i.test(line)
+    ) {
+      names.push(line);
+    }
+  }
 
-    if (isNaN(price)) continue;
-    if (price < 5 || price > 10000) continue;
+  console.log("NAMES:", names);
+  console.log("PRICES:", prices);
 
-    // remove price from name
-    const name = line.replace(priceRaw, "").trim();
+  // 🔹 pair them
+  const items = [];
+  const minLength = Math.min(names.length, prices.length);
 
-    if (name.length < 3) continue;
-
+  for (let i = 0; i < minLength; i++) {
     items.push({
-      name,
-      price: Math.round(price),
+      name: names[i],
+      price: parseFloat(prices[i].replace(",", ".")),
     });
   }
 
