@@ -33,11 +33,14 @@ async function extractTextFromReceipt(imageBase64) {
       }
     );
 
+    console.log("OCR FULL RESPONSE:", response.data);
+
     if (response.data.IsErroredOnProcessing) {
       throw new Error(response.data.ErrorMessage || "OCR processing error");
     }
 
     const extractedText = response.data.ParsedResults[0].ParsedText;
+    console.log("OCR RAW:", extractedText);
     return extractedText.trim();
 
   } catch (err) {
