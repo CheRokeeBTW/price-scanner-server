@@ -63,41 +63,48 @@ function normalizeText(text) {
 function parseReceiptText(text) {
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
-  const names = [];
-  const prices = [];
+  const items = [];
+
+  let currentName = null;
 
   for (const line of lines) {
-    // 🔹 detect price (handles "2 96,00" etc)
-    const priceMatch = line.replace(/\s/g, '').match(/\d+[.,]\d{2}/);
+    // 🔹 CLEAN line
+    const clean = line.replace(/\s+/g, ' ').trim();
+
+    // 🔹 detect price (stronger)
+    const priceMatch = clean
+      .replace(/\s/g, '')
+      .match(/\d{2,5}[.,]\d{2}/);
 
     if (priceMatch) {
-      prices.push(priceMatch[0]);
-      continue; // IMPORTANT: don't treat same line as name
+      const price = parseFloat(priceMatch[0].replace(",", "."));
+
+      // ignore fake prices (dates, garbage)
+      if (price < 10 || price > 10000) continue;
+
+      if (currentName) {
+        items.push({
+          name: currentName,
+          price: Math.round(price),
+        });
+
+        currentName = null;
+      }
+
+      continue;
     }
 
-    // 🔹 detect product name (filter garbage)
+    // 🔹 detect VALID product name
     if (
-      /[а-яА-Я]/.test(line) &&
-      line.length > 4 &&
-      !/инн|дата|заказ|сайт|контакт|чек|касс/i.test(line)
+      /[а-яА-Я]/.test(clean) &&
+      clean.length > 4 &&
+      !/инн|дата|заказ|сайт|контакт|чек|фп|ккг|номер/i.test(clean)
     ) {
-      names.push(line);
+      currentName = clean;
     }
   }
 
-  console.log("NAMES:", names);
-  console.log("PRICES:", prices);
-
-  // 🔹 pair them
-  const items = [];
-  const minLength = Math.min(names.length, prices.length);
-
-  for (let i = 0; i < minLength; i++) {
-    items.push({
-      name: names[i],
-      price: parseFloat(prices[i].replace(",", ".")),
-    });
-  }
+  console.log("FINAL ITEMS:", items);
 
   return items;
 }
