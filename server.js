@@ -156,10 +156,10 @@ app.post("/scan-receipt", async (req, res) => {
 
     res.json({
       success: true,
-      rawText: parsed.rawText,
-      items: parsed.items,
-      total: parsed.total,
-      count: parsed.items.length
+      rawText: cleanText,
+      items: parsed,
+      total: null,
+      count: parsed.length
     });
 
   } catch (err) {
