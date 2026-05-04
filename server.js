@@ -20,7 +20,8 @@ async function extractTextFromReceipt(imageBase64) {
     formData.append("language", "rus");           // Russian
     formData.append("isOverlayRequired", "false");
     formData.append("scale", "true");
-    formData.append("OCREngine", "2");            // Better engine for receipts
+    formData.append("OCREngine", "1"); // often better for structured text
+    formData.append("detectOrientation", "true");
 
     const response = await axios.post(
       "https://api.ocr.space/parse/image",
@@ -47,51 +48,53 @@ async function extractTextFromReceipt(imageBase64) {
     console.error("OCR Error:", err.message);
     return null;
   }
+};
+
+function normalizeText(text) {
+  return text
+    .replace(/[^\S\r\n]+/g, ' ')   // remove extra spaces
+    .replace(/[,]/g, '.')          // unify decimals
+    .replace(/O/g, '0')            // OCR mistakes
+    .replace(/СИРНИИ/gi, 'СЫРНЫЙ') // optional fix examples
 }
 
 // ================== SIMPLE RECEIPT PARSER ==================
 function parseReceiptText(text) {
-  if (!text) return [];
-
-  const lines = text.split("\n").map(line => line.trim()).filter(line => line.length > 3);
+  const lines = text
+    .split("\n")
+    .map(l => l.trim())
+    .filter(l => l.length > 3);
 
   const items = [];
-  const priceRegex = /(\d+[.,]\d{2}|\d+)\s*₽?$/;   // looks for prices at the end of line
 
   for (const line of lines) {
-    const priceMatch = line.match(priceRegex);
-    if (priceMatch) {
-      let priceStr = priceMatch[0].replace(/[.,]00$/, "").replace(/[^0-9.,]/g, "");
-      let price = parseFloat(priceStr.replace(",", "."));
+    // must contain letters AND numbers
+    if (!/[a-zA-Zа-яА-Я]/.test(line)) continue;
+    if (!/\d/.test(line)) continue;
 
-      if (price > 1 && price < 100000) {
-        // Remove price from the name
-        const name = line.replace(priceMatch[0], "").trim();
-        if (name.length > 2) {
-          items.push({
-            originalText: line,
-            name: name,
-            price: Math.round(price),
-            quantity: 1   // we can improve this later
-          });
-        }
-      }
-    }
+    // find ALL numbers in line
+    const numbers = line.match(/\d+[.,]?\d*/g);
+    if (!numbers) continue;
+
+    // take LAST number as price (important!)
+    const priceRaw = numbers[numbers.length - 1];
+    const price = parseFloat(priceRaw.replace(",", "."));
+
+    if (isNaN(price)) continue;
+    if (price < 5 || price > 10000) continue;
+
+    // remove price from name
+    const name = line.replace(priceRaw, "").trim();
+
+    if (name.length < 3) continue;
+
+    items.push({
+      name,
+      price: Math.round(price),
+    });
   }
 
-  // Try to detect total
-  let total = null;
-  const totalMatch = text.match(/итого|всего|сумма|total[:\s]*(\d+[.,]\d{2})/i);
-  if (totalMatch) {
-    total = parseFloat(totalMatch[1].replace(",", "."));
-  }
-
-  return {
-    items,
-    total: total || null,
-    rawText: text,
-    itemCount: items.length
-  };
+  return items;
 }
 
 // ================== OPTIONAL: GET CHEAPER PRICE ==================
@@ -145,9 +148,11 @@ app.post("/scan-receipt", async (req, res) => {
       });
     }
 
-    const parsed = parseReceiptText(rawText);
+    const cleanText = normalizeText(rawText);
 
-    console.log(`Parsed ${parsed.items.length} items from receipt`);
+    const parsed = parseReceiptText(cleanText);
+
+    console.log("NORMALIZED TEXT:", cleanText.slice(0, 300));
 
     res.json({
       success: true,
